@@ -11,7 +11,6 @@ module Lamdu.GUI.ExpressionEdit.HoleEdit.SearchArea
 import qualified Control.Lens as Lens
 import qualified Graphics.UI.Bottle.EventMap as E
 import qualified Graphics.UI.Bottle.Widget as Widget
-import           Graphics.UI.Bottle.Align (Aligned(..))
 import qualified Graphics.UI.Bottle.Align as Align
 import qualified Graphics.UI.Bottle.Widget.TreeLayout as TreeLayout
 import qualified Graphics.UI.Bottle.Widgets.FocusDelegator as FocusDelegator
@@ -50,8 +49,10 @@ makeStdWrapped pl holeInfo =
                 | otherwise =
                     FocusDelegator.make ?? fdConfig (Config.hole config)
                     ?? FocusDelegator.FocusEntryChild ?? hidClosedSearchArea
+                    <&> (Align.tValue %~)
         closedSearchTermGui <-
-            fdWrap <*> SearchTerm.make holeInfo <&> TreeLayout.fromWidget & ExpressionGui.stdWrap pl
+            fdWrap <*> SearchTerm.make holeInfo <&> TreeLayout.fromWithTextPos
+            & ExpressionGui.stdWrap pl
         isSelected <- Widget.isSubCursor ?? hidOpen
         if isSelected
             then -- ideally the fdWrap would be "inside" the
@@ -62,7 +63,6 @@ makeStdWrapped pl holeInfo =
                  fdWrap <*> makeOpenSearchAreaGui pl holeInfo
                  <&>
                  \open ->
-                 closedSearchTermGui & TreeLayout.alignedWidget %~
-                 \closed ->
-                 Aligned 0 open `Align.hoverInPlaceOf` closed
+                 closedSearchTermGui & TreeLayout.alignedWidget . Align.tValue %~
+                 Align.hoverInPlaceOf [Align.anchor (open ^. Align.tValue)] . Align.anchor
             else return closedSearchTermGui
