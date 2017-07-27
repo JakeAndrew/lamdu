@@ -13,12 +13,14 @@ import           Data.IORef
 import           Data.MRUMemo (memoIO)
 import qualified Data.Text as Text
 import qualified Graphics.DrawingCombinators as Draw
+import qualified Graphics.UI.Bottle.Animation as Anim
 import           Graphics.UI.Bottle.Direction (Direction)
 import qualified Graphics.UI.Bottle.Direction as Direction
 import qualified Graphics.UI.Bottle.EventMap as E
 import qualified Graphics.UI.Bottle.Main.Animation as MainAnim
 import qualified Graphics.UI.Bottle.MetaKey as MetaKey
 import           Graphics.UI.Bottle.Rect (Rect)
+import qualified Graphics.UI.Bottle.Rect as Rect
 import           Graphics.UI.Bottle.Widget (Widget, VirtualCursor(..))
 import qualified Graphics.UI.Bottle.Widget as Widget
 import qualified Graphics.UI.Bottle.Widgets.EventMapHelp as EventMapHelp
@@ -180,9 +182,18 @@ mainLoopWidget win mkWidgetUnmemod options =
         mkWidgetRef <- mkW >>= newIORef
         let newWidget = mkW >>= writeIORef mkWidgetRef
         let renderWidget size =
-                Widget.renderWithCursor
-                <$> (getConfig <&> cCursor)
-                <*> (readIORef mkWidgetRef >>= (size &))
+                do
+                    cursor <- readIORef cursorRef
+                    let vcursorimg =
+                            case cursor ^. cursorVirtual of
+                            Nothing -> mempty
+                            Just (VirtualCursor r) ->
+                                Anim.backgroundColor ["test"] (Draw.Color 1 1 0 0.5) (r ^. Rect.size)
+                                & Anim.translate (r ^. Rect.topLeft)
+                    Widget.renderWithCursor
+                        <$> (getConfig <&> cCursor)
+                        <*> (readIORef mkWidgetRef >>= (size &))
+                        <&> _1 <>~ vcursorimg
         MainAnim.mainLoop win (getConfig <&> cAnim) $ \size -> MainAnim.Handlers
             { MainAnim.tickHandler =
                 do
