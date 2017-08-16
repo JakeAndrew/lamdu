@@ -9,13 +9,14 @@ module Lamdu.GUI.ExpressionEdit.HoleEdit.SearchArea
     ) where
 
 import qualified Control.Lens as Lens
-import qualified GUI.Momentu.EventMap as E
-import qualified GUI.Momentu.Widget as Widget
 import qualified GUI.Momentu.Align as Align
+import qualified GUI.Momentu.EventMap as E
 import qualified GUI.Momentu.Hover as Hover
 import qualified GUI.Momentu.Responsive as Responsive
+import qualified GUI.Momentu.Widget as Widget
 import qualified GUI.Momentu.Widgets.FocusDelegator as FocusDelegator
 import qualified Lamdu.Config as Config
+import qualified Lamdu.GUI.ExpressionEdit.HoleEdit.EventMap as HoleEventMap
 import           Lamdu.GUI.ExpressionEdit.HoleEdit.Info (HoleInfo(..))
 import           Lamdu.GUI.ExpressionEdit.HoleEdit.Open (makeOpenSearchAreaGui, ResultsPlacement)
 import qualified Lamdu.GUI.ExpressionEdit.HoleEdit.SearchTerm as SearchTerm
@@ -56,16 +57,22 @@ makeStdWrapped pl holeInfo =
             fdWrap <*> SearchTerm.make holeInfo <&> Responsive.fromWithTextPos
             & ExpressionGui.stdWrap pl
         isSelected <- Widget.isSubCursor ?? hidOpen
-        if isSelected
-            then -- ideally the fdWrap would be "inside" the
-                 -- type-view addition and stdWrap, but it's not
-                 -- important in the case the FD is selected, and
-                 -- it is harder to implement, so just wrap it
-                 -- here
-                 (fdWrap <&> (Lens.mapped %~))
-                 <*> makeOpenSearchAreaGui pl holeInfo
-                 <&> Lens.mapped %~
-                 \open ->
-                 closedSearchTermGui & Responsive.alignedWidget . Align.tValue %~
-                 Hover.hoverInPlaceOf [Hover.anchor (open ^. Align.tValue)] . Hover.anchor
-            else return (const closedSearchTermGui)
+        case (isSelected, ExprGuiT.isHoleResult pl) of
+            (False, _) -> return (const closedSearchTermGui)
+            (True, True) ->
+                do
+                    closedEventMap <- HoleEventMap.closedEventMap pl holeInfo
+                    Widget.setFocused closedSearchTermGui
+                        & E.weakerEvents closedEventMap & const & pure
+            (True, False) ->
+                -- ideally the fdWrap would be "inside" the
+                -- type-view addition and stdWrap, but it's not
+                -- important in the case the FD is selected, and
+                -- it is harder to implement, so just wrap it
+                -- here
+                (fdWrap <&> (Lens.mapped %~))
+                <*> makeOpenSearchAreaGui pl holeInfo
+                <&> Lens.mapped %~
+                \open ->
+                closedSearchTermGui & Responsive.alignedWidget . Align.tValue %~
+                Hover.hoverInPlaceOf [Hover.anchor (open ^. Align.tValue)] . Hover.anchor

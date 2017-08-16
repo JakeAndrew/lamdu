@@ -2,6 +2,9 @@
 module Lamdu.GUI.ExpressionEdit.HoleEdit.EventMap
     ( blockDownEvents, blockUpEvents, disallowCharsFromSearchTerm
     , makeOpenEventMaps
+
+    , closedEventMap
+    , mkEventsOnPickedResult -- TODO: Remove
     ) where
 
 import qualified Control.Lens as Lens
@@ -21,11 +24,13 @@ import qualified GUI.Momentu.Widget as Widget
 import qualified GUI.Momentu.Widgets.Grid as Grid
 import           Lamdu.CharClassification (operatorChars, bracketChars, digitChars, hexDigitChars, charPrecedence)
 import qualified Lamdu.Config as Config
+import qualified Lamdu.GUI.ExpressionEdit.EventMap as ExprEventMap
 import           Lamdu.GUI.ExpressionEdit.HoleEdit.Info (HoleInfo(..))
 import qualified Lamdu.GUI.ExpressionEdit.HoleEdit.Info as HoleInfo
 import           Lamdu.GUI.ExpressionEdit.HoleEdit.ShownResult (PickedResult(..), ShownResult(..))
 import           Lamdu.GUI.ExpressionGui.Monad (ExprGuiM)
 import qualified Lamdu.GUI.ExpressionGui.Monad as ExprGuiM
+import qualified Lamdu.GUI.ExpressionGui.Types as ExprGuiT
 import qualified Lamdu.GUI.WidgetIds as WidgetIds
 import qualified Lamdu.Sugar.NearestHoles as NearestHoles
 import qualified Lamdu.Sugar.Types as Sugar
@@ -75,6 +80,17 @@ adHocTextEditEventMap holeInfo =
         snoc x = (<> Text.singleton x)
         searchTerm = Property.value searchTermProp
         changeText f = mempty <$ Property.pureModify searchTermProp f
+
+closedEventMap ::
+    Monad m => Sugar.Payload m ExprGuiT.Payload ->
+    HoleInfo m -> ExprGuiM m (Widget.EventMap (T m Widget.EventResult))
+closedEventMap pl holeInfo =
+    do
+        adHoc <- adHocTextEditEventMap holeInfo
+        exprEventMap <- ExprEventMap.make pl ExprGuiM.NoHolePick
+        adHoc <> exprEventMap <>
+            E.keyPress (ModKey mempty MetaKey.Key'F2)
+            (E.Doc ["BAZOOGLA"]) undefined & pure
 
 disallowedHoleChars :: String
 disallowedHoleChars = "`\"\n "
@@ -189,12 +205,18 @@ removeUnwanted =
 
 mkEventsOnPickedResult ::
     Monad m =>
-    ShownResult m -> ExprGuiM m (Widget.EventMap (T m Widget.EventResult))
+    ShownResult m ->
+    ExprGuiM m
+    ( Widget.EventMap (T m Widget.EventResult) ->
+      Widget.EventMap (T m Widget.EventResult)
+    )
 mkEventsOnPickedResult shownResult =
-    removeUnwanted
-    <*> srMkEventMap shownResult
-    <&> E.emDocs . E.docStrs . Lens._last %~ (<> " (On picked result)")
-    <&> Lens.mapped %~ pickBefore shownResult
+    do
+        remove <- removeUnwanted
+        pure $ \eventMap ->
+            remove eventMap
+            & E.emDocs . E.docStrs . Lens._last %~ (<> " (On picked result)")
+            <&> pickBefore shownResult
 
 -- To make HoleEdit
 emptyPickEventMap ::
@@ -250,13 +272,11 @@ makeOpenEventMaps holeInfo mShownResult =
     do
         holeConfig <- Lens.view Config.config <&> Config.hole
         -- below ad-hoc and search term edit:
-        eventMap <-
-            case mShownResult of
-            Nothing -> pure (emptyPickEventMap holeConfig)
-            Just shownResult ->
-                mkEventsOnPickedResult shownResult
-                <&> mappend (pickEventMap holeConfig holeInfo shownResult)
-            <&> mappend maybeLiteralTextEventMap
+        let eventMap =
+                maybeLiteralTextEventMap <>
+                case mShownResult of
+                Nothing -> emptyPickEventMap holeConfig
+                Just shownResult -> pickEventMap holeConfig holeInfo shownResult
         adHocEdit <- adHocTextEditEventMap holeInfo
         pure (eventMap, adHocEdit <> eventMap)
     where

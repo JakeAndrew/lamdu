@@ -182,24 +182,28 @@ makeShownResult holeInfo result =
         -- Running it more than once caused a horrible bug (bugfix: 848b6c4407)
         res <- rHoleResult result & transaction
         theme <- Theme.hole <$> Lens.view Theme.theme
-        (widget, mkEventMap) <- makeHoleResultWidget (rId result) res
-        stdSpacing <- Spacer.getSpaceSize
-        let padding = Theme.holeResultPadding theme <&> realToFrac & (* stdSpacing)
         let mFirstHoleInside =
                 res ^? Sugar.holeResultConverted
                 . SugarLens.holePayloads . Sugar.plEntityId
+        let shownResult =
+                ShownResult
+                { srMkEventMap = pure (fixNumWithDotEventMap holeInfo res)
+                , srHasHoles =
+                    Lens.has (Sugar.holeResultConverted . SugarLens.holePayloads)
+                    res
+                , srPick =
+                    res ^. Sugar.holeResultPick
+                    >>= afterPick holeInfo (rId result) mFirstHoleInside
+              }
+        processResultEventMap <- EventMap.mkEventsOnPickedResult shownResult
+        widget <-
+            makeHoleResultWidget (rId result) res
+            <&> Lens.mapped . E.eventMap %~ processResultEventMap
+        stdSpacing <- Spacer.getSpaceSize
+        let padding = Theme.holeResultPadding theme <&> realToFrac & (* stdSpacing)
         return
             ( Element.pad padding widget
-            , ShownResult
-              { srMkEventMap =
-                  mkEventMap <&> mappend (fixNumWithDotEventMap holeInfo res)
-              , srHasHoles =
-                  Lens.has (Sugar.holeResultConverted . SugarLens.holePayloads)
-                  res
-              , srPick =
-                  res ^. Sugar.holeResultPick
-                  >>= afterPick holeInfo (rId result) mFirstHoleInside
-              }
+            , shownResult
             )
 
 makeExtraSymbol :: Monad m => Bool -> ResultsList n -> ExprGuiM m (WithTextPos View)
@@ -297,38 +301,15 @@ applyResultLayout fGui =
 makeHoleResultWidget ::
     Monad m =>
     Widget.Id -> Sugar.HoleResult (Name m) m ->
-    ExprGuiM m
-    ( WithTextPos (Widget (T m Widget.EventResult))
-    , ExprGuiM m (Widget.EventMap (T m Widget.EventResult))
-    )
+    ExprGuiM m (WithTextPos (Widget (T m Widget.EventResult)))
 makeHoleResultWidget resultId holeResult =
-    (Widget.makeFocusableView ?? resultId <&> (Align.tValue %~))
-    <*> mkWidget
+    holeResultConverted
+    & postProcessSugar
+    & ExprGuiM.makeSubexpression
+    & applyResultLayout
     <&> Element.setLayers . Element.layers . Lens.traverse %~
         Anim.mapIdentities (<> (resultSuffix # Widget.toAnimId resultId))
-    <&> flip (,) mkEventMap
     where
-        mkEventMap =
-            -- Create a hidden result widget that we never display, but only
-            -- keep the event map from. We always tell it that it has focus,
-            -- so that even if we're on the search term, we can have valid
-            -- event maps of any result (we actually use the first one's
-            -- event map)
-            Reader.local (Widget.cursor .~ idWithinResultWidget) mkWidget
-            <&> getEvents
-        getEvents widget =
-            case widget ^. Align.tValue . Widget.wState of
-            Widget.StateUnfocused {} -> mempty
-            Widget.StateFocused makeFocus ->
-                let focus = makeFocus (Widget.Surrounding 0 0 0 0)
-                in
-                (focus ^. Widget.fEventMap)
-                (Widget.VirtualCursor (last (focus ^. Widget.fFocalAreas)))
-        mkWidget =
-            holeResultConverted
-            & postProcessSugar
-            & ExprGuiM.makeSubexpression
-            & applyResultLayout
         holeResultEntityId =
             holeResultConverted ^. Sugar.rPayload . Sugar.plEntityId
         idWithinResultWidget =
@@ -549,11 +530,7 @@ makeOpenSearchAreaGui ::
     ExprGuiM m (ResultsPlacement -> WithTextPos (Widget (T m Widget.EventResult)))
 makeOpenSearchAreaGui pl holeInfo =
     do
-        (shownResultsLists, hasHiddenResults) <-
-            -- Don't generate results of open holes inside hole results
-            if ExprGuiT.isHoleResult pl
-            then return ([], HaveHiddenResults)
-            else HoleResults.makeAll holeInfo
+        (shownResultsLists, hasHiddenResults) <- HoleResults.makeAll holeInfo
         let shownMainResultsIds =
                 rId . (^. HoleResults.rlMain) <$> shownResultsLists
         let allShownResultIds =

@@ -550,10 +550,7 @@ stdWrapParentExpr ::
     Sugar.Payload m ExprGuiT.Payload ->
     ExprGuiM m (ExpressionGui m) ->
     ExprGuiM m (ExpressionGui m)
-stdWrapParentExpr pl mkGui
-    | ExprGuiT.isHoleResult pl = stdWrap pl mkGui
-    | otherwise =
-        parentDelegator (WidgetIds.fromExprPayload pl) <*> mkGui & stdWrap pl
+stdWrapParentExpr pl mkGui = parentDelegator (WidgetIds.fromExprPayload pl) <*> mkGui & stdWrap pl
 
 grammarLabel :: Monad m => Text -> ExprGuiM m (WithTextPos View)
 grammarLabel text =
