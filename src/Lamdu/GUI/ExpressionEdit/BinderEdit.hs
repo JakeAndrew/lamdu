@@ -96,26 +96,32 @@ presentationModeChoiceConfig = Choice.Config
     }
 
 mkPresentationModeEdit ::
-    Monad m => Widget.Id ->
+    Monad m =>
+    Widget.Id ->
+    Sugar.BinderParams name m ->
     Transaction.MkProperty m Sugar.PresentationMode ->
     ExprGuiM m (Widget (T m Widget.EventResult))
-mkPresentationModeEdit myId prop =
+mkPresentationModeEdit myId (Sugar.FieldParams params) prop =
     do
         cur <- Transaction.getP prop
         theme <- Lens.view Theme.theme
         pairs <-
-            traverse mkPair [Sugar.OO, Sugar.Verbose, Sugar.Infix]
+            traverse mkPair [Sugar.OO (paramTags !! 0), Sugar.Verbose, Sugar.Infix (paramTags !! 0) (paramTags !! 1)]
             & Reader.local
                 (TextView.style . TextView.styleColor .~ Theme.presentationChoiceColor (Theme.codeForegroundColors theme))
         Choice.make ?? Transaction.setP prop ?? pairs ?? cur
             ?? presentationModeChoiceConfig ?? myId
             <&> Element.scale (realToFrac <$> Theme.presentationChoiceScaleFactor theme)
     where
+        paramTags = params ^.. traverse . Sugar.fpInfo . Sugar.fpiTag . Sugar.tagInfo . Sugar.tagVal
         mkPair presentationMode =
             TextView.makeFocusableLabel text <&> (^. Align.tValue)
             <&> (,) presentationMode
             where
                 text = show presentationMode & Text.pack
+mkPresentationModeEdit _ _ _ =
+    -- This shouldn't happen?
+    return Element.empty
 
 data Parts m = Parts
     { pMParamsEdit :: Maybe (ExpressionGui m)
@@ -347,7 +353,7 @@ make name color binder myId =
         rhsJumperEquals <- jumpToRHS bodyId
         mPresentationEdit <-
             binder ^. Sugar.bMPresentationModeProp
-            & Lens._Just (mkPresentationModeEdit presentationChoiceId)
+            & Lens._Just (mkPresentationModeEdit presentationChoiceId (binder ^. Sugar.bParams))
         jumpHolesEventMap <-
             ExprEventMap.jumpHolesEventMap (binderContentNearestHoles body)
         defNameEdit <-

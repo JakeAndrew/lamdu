@@ -85,7 +85,10 @@ assocFieldParamList ::
 assocFieldParamList lambdaI =
     Transaction.assocDataRef "field param list" $ UniqueId.toUUID lambdaI
 
-data PresentationMode = OO | Verbose | Infix
+data PresentationMode
+    = OO T.Tag
+    | Verbose
+    | Infix T.Tag T.Tag
     deriving (Eq, Ord, Show, Generic)
 instance Binary PresentationMode
 

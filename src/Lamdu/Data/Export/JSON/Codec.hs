@@ -81,15 +81,25 @@ uncurry4 :: (a -> b -> c -> d -> e) -> (a, b, c, d) -> e
 uncurry4 f (x0, x1, x2, x3) = f x0 x1 x2 x3
 
 encodePresentationMode :: Encoder Anchors.PresentationMode
-encodePresentationMode Anchors.OO = Aeson.String "OO"
 encodePresentationMode Anchors.Verbose = Aeson.String "Verbose"
-encodePresentationMode Anchors.Infix = Aeson.String "Infix"
+encodePresentationMode (Anchors.OO tag) = Aeson.object ["OO" .= encodeTagId tag]
+encodePresentationMode (Anchors.Infix l r) =
+    Aeson.object ["Infix" .= Aeson.Array (Vector.fromList [encodeTagId l, encodeTagId r])]
 
 decodePresentationMode :: Decoder Anchors.PresentationMode
-decodePresentationMode (Aeson.String "OO") = pure Anchors.OO
 decodePresentationMode (Aeson.String "Verbose") = pure Anchors.Verbose
-decodePresentationMode (Aeson.String "Infix") = pure Anchors.Infix
-decodePresentationMode other = fail $ "Unexpected presentation mode: " ++ show other
+decodePresentationMode json =
+    withObject "Type" ?? json $ \o ->
+    jsum'
+    [ o .: "OO" >>= lift . decodeTagId <&> Anchors.OO
+    , o .: "Infix" >>= lift . decodeInfix
+    ]
+    where
+        decodeInfix =
+            Aeson.withArray "array of Infix tags" $
+            \arr -> case Vector.toList arr of
+            [l, r] -> Anchors.Infix <$>  decodeTagId l <*> decodeTagId r
+            _ -> fail "Expecting two infix tags"
 
 encodeFFIName :: Encoder Definition.FFIName
 encodeFFIName (Definition.FFIName modulePath name) = modulePath ++ [name] & Aeson.toJSON
